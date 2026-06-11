@@ -22,17 +22,31 @@ const CONFIDENTIAL_WORDS = [
 
 const MARKETING_WORDS = [
   'unsubscribe','newsletter','no-reply','noreply','do not reply',
-  'donotreply','marketing','promotion','offer','discount','sale',
+  'donotreply','marketing','promotion','offer','discount',
   'weekly digest','monthly digest','automated message','auto-generated',
-  'you are receiving this','mailing list','bulk','campaign',
-  'special offer','click here to unsubscribe','manage your preferences',
-  'email preferences','opt out','opt-out'
+  'you are receiving this','mailing list','campaign',
+  'click here to unsubscribe','manage your preferences',
+  'email preferences','opt out','opt-out','view in browser',
+  'view this email','update your preferences','automated notification',
+  'do not reply to this','please do not reply','this is an automated',
+  'to unsubscribe from'
 ];
 
 const MARKETING_DOMAINS = [
   'mailchimp','sendgrid','constantcontact','hubspot','marketo',
-  'salesforce','klaviyo','campaignmonitor','mailgun','postmark',
-  'amazonses','mandrill','sparkpost'
+  'klaviyo','campaignmonitor','mailgun','postmark',
+  'amazonses','mandrill','sparkpost','mailerlite','activecampaign',
+  'squareup.com','square.com','squ.re',
+  'stripe.com','paypal.com','gocardless','worldpay','sagepay',
+  'donorperfect','bloomerang','blackbaud','etapestry',
+  'eventbrite','ticketmaster'
+];
+
+const IGNORE_SENDERS = [
+  'receipts@square.com','notifications@squareup.com','no-reply@squareup.com',
+  'hello@squareup.com','noreply@squareup.com','receipt@squareup.com',
+  'no-reply@donorperfect.com','notifications@donorperfect.com',
+  'receipts@stripe.com','service@paypal.com','noreply@paypal.com'
 ];
 
 const CATEGORIES = [
@@ -44,7 +58,8 @@ const CATEGORIES = [
   { name:'Membership renewal',      color:'#993556', keywords:['renew','renewal','lapsed','lapse','expired','expire','membership due','auto renew','not renewed','renewal failed'] },
   { name:'Feature requests',        color:'#0F6E56', keywords:['feature','suggestion','would like','could you add','request','improve','bulk import','export','wish','it would be great'] },
   { name:'Billing & payments',      color:'#BA7517', keywords:['payment','charge','billing','direct debit','card','refund','overcharged','double charged','receipt','transaction','fee'] },
-  { name:'Account management',      color:'#4A4A8A', keywords:['cancel','cancellation','close account','delete account','transfer','change email','update details','change address'] }
+  { name:'Account management',      color:'#4A4A8A', keywords:['cancel','cancellation','close account','delete account','transfer','change email','update details','change address'] },
+  { name:'Accessibility & support',  color:'#6B7280', keywords:['help','assistance','support','question','query','enquiry','inquiry','how do i','how to','where can i','can you help','need help','need assistance','not sure','confused','wondering'] }
 ];
 
 // Sentiment keywords
@@ -59,9 +74,10 @@ function isConfidential(subject, preview) {
 function isMarketing(subject, preview, from) {
   const text   = (subject+' '+preview).toLowerCase();
   const sender = (from||'').toLowerCase();
-  if (MARKETING_WORDS.some(w=>text.includes(w))) return true;
+  if (IGNORE_SENDERS.some(s=>sender===s)) return true;
   if (MARKETING_DOMAINS.some(d=>sender.includes(d))) return true;
-  if (/^(re:|fwd:|fw:)?\s*(newsletter|update|digest|bulletin|announcement)/i.test(subject)) return true;
+  if (MARKETING_WORDS.some(w=>text.includes(w))) return true;
+  if (/^(re:|fwd:|fw:)?\s*(newsletter|update|digest|bulletin|announcement|receipt|order confirmation)/i.test(subject)) return true;
   return false;
 }
 
@@ -169,11 +185,12 @@ function buildInsights(emails, categories, trend, period) {
     var top = categories[0];
     var pct = Math.round((top.count/totalCurrent)*100);
     insights.push({
-      type:    'warning',
-      icon:    'ti-alert-triangle',
-      title:   top.name+' is your biggest issue',
-      detail:  top.count+' emails ('+pct+'% of all support) are about '+top.name.toLowerCase()+'. This is where the most member friction is happening.',
-      action:  'Review the most recent '+Math.min(top.count,10)+' emails in this category to identify the root cause.'
+      type:      'warning',
+      icon:      'ti-alert-triangle',
+      title:     top.name+' is your biggest issue',
+      detail:    top.count+' emails ('+pct+'% of all support) are about '+top.name.toLowerCase()+'. This is where the most member friction is happening.',
+      action:    'Click this insight to filter the email log and review these emails.',
+      filterCat: top.name
     });
   }
 
@@ -182,11 +199,12 @@ function buildInsights(emails, categories, trend, period) {
     .sort(function(a,b){return b.change-a.change;})[0];
   if (biggestSpike) {
     insights.push({
-      type:   'danger',
-      icon:   'ti-trending-up',
-      title:  biggestSpike.name+' up '+biggestSpike.change+'% vs previous period',
-      detail: 'You received '+biggestSpike.current+' tickets this period vs '+biggestSpike.previous+' last period. This spike needs attention — something may have changed or broken.',
-      action: 'Check if any system changes, updates, or events happened at the start of this period.'
+      type:      'danger',
+      icon:      'ti-trending-up',
+      title:     biggestSpike.name+' up '+biggestSpike.change+'% vs previous period',
+      detail:    'You received '+biggestSpike.current+' tickets this period vs '+biggestSpike.previous+' last period. This spike needs attention — something may have changed or broken.',
+      action:    'Click to filter and review these emails — check if a system change triggered this.',
+      filterCat: biggestSpike.name
     });
   }
 
