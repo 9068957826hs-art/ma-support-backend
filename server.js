@@ -30,6 +30,38 @@ const CATEGORIES = [
   { name:'Feature requests',         keywords:['feature','suggestion','would like','could you add','request','improve','bulk import','export','wish','it would be great'] }
 ];
 
+// FAQ templates — auto-filled based on real email patterns
+const FAQ_TEMPLATES = {
+  'Login & access issues': [
+    { q:'How do I reset my password?', a:'Go to the login page and click "Forgot password". An email will arrive within a few minutes — check your spam folder too. If nothing arrives, contact support@membershipanywhere.com and we will reset it manually.' },
+    { q:'My account is locked — how do I get back in?', a:'Accounts lock after several failed login attempts. Wait 15 minutes and try again, or contact support@membershipanywhere.com to unlock it immediately.' },
+    { q:'I am not receiving my 2FA code — what do I do?', a:'Check your phone signal and request a new code. If you have changed your phone number, contact support so we can update your 2FA settings.' }
+  ],
+  'Technical errors': [
+    { q:'The portal is showing an error — what should I do?', a:'Try a hard refresh (Ctrl+Shift+R on Windows, Cmd+Shift+R on Mac). If the issue continues, try a different browser or clear your cache. Include any error code when contacting support.' },
+    { q:'A page is not loading — how do I fix this?', a:'First try refreshing the page. If it persists, clear your browser cache and cookies and try again. If still not working, contact support with the URL of the page and what browser you are using.' }
+  ],
+  'Member portal problems': [
+    { q:'My portal is showing the wrong membership tier — why?', a:'This can happen after an upgrade if the system has not refreshed yet. Log out, wait 5 minutes, and log back in. If still incorrect contact support with your payment confirmation.' },
+    { q:'I cannot save changes to my profile — what do I do?', a:'Make sure all required fields are filled in correctly. Try a different browser. If the issue persists contact support@membershipanywhere.com with a screenshot of the error.' }
+  ],
+  'Email & comms issues': [
+    { q:'Why am I not receiving emails from you?', a:'Check your spam or junk folder first. Add support@membershipanywhere.com to your safe senders list. If you still do not receive emails, contact us and we will check your communication preferences.' },
+    { q:'How do I unsubscribe from newsletters?', a:'Click the unsubscribe link at the bottom of any newsletter email. Changes take effect within 24 hours. You can also update your preferences in your member portal under Account Settings.' }
+  ],
+  'Event registration': [
+    { q:'How do I cancel or transfer my event booking?', a:'Email support@membershipanywhere.com with your booking reference. Refunds are available up to 7 days before the event. We can also transfer your place to a colleague at any time.' },
+    { q:'The event registration page is not working — what do I do?', a:'Try refreshing the page or using a different browser. If registrations are full the page may show as unavailable. Contact support to be added to the waitlist.' }
+  ],
+  'Membership renewal': [
+    { q:'My membership says lapsed but I renewed — why?', a:'Payment processing can take up to 1 hour to update your status. Refresh your portal after 1 hour. If still showing lapsed, contact support with your payment confirmation and we will update it manually.' },
+    { q:'How do I set up automatic renewal?', a:'Log into your member portal, go to Account Settings, and enable Auto-renew. Your membership will automatically renew before expiry and you will receive an email confirmation.' }
+  ],
+  'Feature requests': [
+    { q:'How do I submit a feature request or suggestion?', a:'We love hearing from members! Email your suggestion to support@membershipanywhere.com with the subject line "Feature Request". Our team reviews all suggestions regularly.' }
+  ]
+];
+
 function checkConfidential(subject, preview) {
   const text = (subject + ' ' + preview).toLowerCase();
   return CONFIDENTIAL_WORDS.some(w => text.includes(w));
@@ -43,20 +75,47 @@ function categorise(subject, preview) {
   return 'General enquiry';
 }
 
+// ── FIXED DATE FILTER — uses proper ISO format ────────────
 function getFromDate(period) {
   const d = new Date();
-  if (period === 'today') { d.setHours(0,0,0,0); }
-  else { d.setDate(d.getDate() - ({ '7':7,'30':30,'90':90,'365':365 }[period]||30)); }
-  return d.toISOString();
+  if (period === 'today') {
+    d.setHours(0, 0, 0, 0);
+  } else {
+    const days = { '7':7, '30':30, '90':90, '365':365 }[period] || 30;
+    d.setDate(d.getDate() - days);
+    d.setHours(0, 0, 0, 0);
+  }
+  // Graph API needs this exact format: 2026-06-01T00:00:00Z
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 function todayStr() { return new Date().toISOString().split('T')[0]; }
 function daysAgoStr(n) { const d=new Date(); d.setDate(d.getDate()-n); return d.toISOString().split('T')[0]; }
+function buildCategories(emails) {
+  const counts = {};
+  emails.forEach(e => { counts[e.category] = (counts[e.category]||0)+1; });
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name,count}));
+}
+
+// ── BUILD FAQ FROM REAL EMAIL PATTERNS ───────────────────
+function buildFAQ(categories) {
+  const faqs = [];
+  // Add FAQ items for each category that has actual emails
+  for (const cat of categories) {
+    const templates = FAQ_TEMPLATES[cat.name];
+    if (templates) {
+      templates.forEach(t => faqs.push({ ...t, category: cat.name, count: cat.count }));
+    }
+  }
+  // Sort by most common issue first
+  faqs.sort((a,b) => b.count - a.count);
+  // Remove duplicates and limit to 12
+  return faqs.slice(0, 12);
+}
 
 // ── GET ACCESS TOKEN ──────────────────────────────────────
 async function getAccessToken() {
-  console.log('Getting access token for tenant:', TENANT_ID);
-  const url = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`;
+  const url  = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`;
   const body = new URLSearchParams({
     grant_type:    'client_credentials',
     client_id:     CLIENT_ID,
@@ -65,53 +124,62 @@ async function getAccessToken() {
   });
   const res  = await fetch(url, { method:'POST', body });
   const json = await res.json();
-  if (json.error) {
-    console.error('Token error:', json.error, json.error_description);
-    throw new Error(`Token failed: ${json.error} — ${json.error_description}`);
-  }
-  console.log('Token acquired successfully');
+  if (json.error) throw new Error(`Token failed: ${json.error} — ${json.error_description}`);
   return json.access_token;
 }
 
-// ── FETCH EMAILS FROM GRAPH ───────────────────────────────
+// ── FETCH EMAILS — with proper pagination ─────────────────
 async function fetchFromGraph(period) {
-  const token  = await getAccessToken();
-  const since  = getFromDate(period);
-  const filter = encodeURIComponent(`receivedDateTime ge ${since}`);
-  const url    = `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages?$filter=${filter}&$select=subject,from,receivedDateTime,bodyPreview&$orderby=receivedDateTime desc&$top=200`;
+  const token = await getAccessToken();
+  const since = getFromDate(period);
 
-  console.log(`Fetching emails for mailbox: ${MAILBOX}, period: ${period}`);
+  console.log(`Fetching emails since: ${since} for period: ${period}`);
 
-  const res  = await fetch(url, { headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' } });
-  const json = await res.json();
-
-  // Log full error detail so we can see exactly what Microsoft says
-  if (json.error) {
-    console.error('Graph API full error:', JSON.stringify(json.error));
-    throw new Error(`${json.error.code}: ${json.error.message}`);
-  }
-
-  console.log(`Fetched ${json.value?.length || 0} emails`);
+  // Use $filter with correct date format
+  const filter  = `receivedDateTime ge ${since}`;
+  const select  = 'subject,from,receivedDateTime,bodyPreview';
+  const orderby = 'receivedDateTime desc';
+  
+  let url = `https://graph.microsoft.com/v1.0/users/${MAILBOX}/messages`
+          + `?$filter=${encodeURIComponent(filter)}`
+          + `&$select=${select}`
+          + `&$orderby=${encodeURIComponent(orderby)}`
+          + `&$top=100`;
 
   const emails  = [];
   let   skipped = 0;
+  let   pages   = 0;
 
-  for (const m of (json.value||[])) {
-    const subject = m.subject     || '(no subject)';
-    const preview = m.bodyPreview || '';
-    const from    = m.from?.emailAddress?.address || 'unknown';
-    const date    = (m.receivedDateTime||'').split('T')[0];
-    if (checkConfidential(subject, preview)) { skipped++; continue; }
-    emails.push({ subject, from, date, category: categorise(subject, preview) });
+  // Handle pagination — fetch all pages
+  while (url && pages < 10) {
+    const res  = await fetch(url, { headers:{ Authorization:`Bearer ${token}` } });
+    const json = await res.json();
+
+    if (json.error) {
+      console.error('Graph error:', JSON.stringify(json.error));
+      throw new Error(`${json.error.code}: ${json.error.message}`);
+    }
+
+    console.log(`Page ${pages+1}: got ${json.value?.length || 0} emails`);
+
+    for (const m of (json.value || [])) {
+      const subject = m.subject     || '(no subject)';
+      const preview = m.bodyPreview || '';
+      const from    = m.from?.emailAddress?.address || 'unknown';
+      const date    = (m.receivedDateTime || '').split('T')[0];
+
+      if (checkConfidential(subject, preview)) { skipped++; continue; }
+
+      emails.push({ subject, from, date, category: categorise(subject, preview) });
+    }
+
+    // Get next page if exists
+    url = json['@odata.nextLink'] || null;
+    pages++;
   }
 
+  console.log(`Total emails fetched: ${emails.length}, skipped: ${skipped}`);
   return { emails, skipped };
-}
-
-function buildCategories(emails) {
-  const counts = {};
-  emails.forEach(e => { counts[e.category] = (counts[e.category]||0)+1; });
-  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([name,count])=>({name,count}));
 }
 
 // ── DEMO DATA ─────────────────────────────────────────────
@@ -139,7 +207,8 @@ function getDemoData(period) {
   const emails = DEMO_POOL.slice(0,take).map((e,i)=>({
     ...e, date: i===0 ? todayStr() : daysAgoStr(Math.min(i*Math.floor(maxD/take),maxD))
   }));
-  return { source:'demo', period, total:emails.length, skipped:Math.floor(take*0.15), categories:buildCategories(emails), emails };
+  const categories = buildCategories(emails);
+  return { source:'demo', period, total:emails.length, skipped:Math.floor(take*0.15), categories, emails, faq: buildFAQ(categories) };
 }
 
 // ── ROUTES ────────────────────────────────────────────────
@@ -152,31 +221,24 @@ app.get('/', (req, res) => {
   });
 });
 
-// ── DEBUG ROUTE — shows exact Microsoft error ─────────────
 app.get('/debug', async (req, res) => {
-  if (!TENANT_ID || !CLIENT_ID || !CLIENT_SECRET) {
-    return res.json({ status: 'no credentials set' });
-  }
+  if (!TENANT_ID || !CLIENT_ID || !CLIENT_SECRET) return res.json({ status:'no credentials' });
   try {
     const token = await getAccessToken();
-    // Try to get mailbox info
-    const url = `https://graph.microsoft.com/v1.0/users/${MAILBOX}`;
-    const r   = await fetch(url, { headers:{ Authorization:`Bearer ${token}` } });
-    const j   = await r.json();
-    res.json({ tokenOk: true, mailboxCheck: j });
-  } catch(e) {
-    res.json({ tokenOk: false, error: e.message });
-  }
+    const r = await fetch(`https://graph.microsoft.com/v1.0/users/${MAILBOX}`, { headers:{ Authorization:`Bearer ${token}` } });
+    const j = await r.json();
+    res.json({ tokenOk:true, mailboxCheck:j });
+  } catch(e) { res.json({ tokenOk:false, error:e.message }); }
 });
 
 app.get('/emails', async (req, res) => {
   const period = req.query.period || '30';
-  if (!TENANT_ID || !CLIENT_ID || !CLIENT_SECRET) {
-    return res.json(getDemoData(period));
-  }
+  if (!TENANT_ID || !CLIENT_ID || !CLIENT_SECRET) return res.json(getDemoData(period));
   try {
     const { emails, skipped } = await fetchFromGraph(period);
-    res.json({ source:'live', period, total:emails.length, skipped, categories:buildCategories(emails), emails });
+    const categories = buildCategories(emails);
+    const faq        = buildFAQ(categories);
+    res.json({ source:'live', period, total:emails.length, skipped, categories, emails, faq });
   } catch(err) {
     console.error('Final error:', err.message);
     res.status(500).json({ error: err.message });
@@ -186,5 +248,5 @@ app.get('/emails', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`MA Support Backend running on port ${PORT}`);
   console.log(`Mailbox: ${MAILBOX}`);
-  console.log(`Mode: ${(TENANT_ID && CLIENT_ID && CLIENT_SECRET) ? 'LIVE' : 'DEMO'}`);
+  console.log(`Mode: ${(TENANT_ID && CLIENT_ID && CLIENT_SECRET) ? 'LIVE — Microsoft 365 connected' : 'DEMO'}`);
 });
