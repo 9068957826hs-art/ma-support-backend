@@ -14,321 +14,404 @@ const CLIENT_ID     = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const MAILBOX       = process.env.MAILBOX || 'support@membershipanywhere.com';
 
-// ── SKIP THESE — confidential or marketing ───────────────
 const CONFIDENTIAL_WORDS = [
-  'invoice', 'payment failed', 'bank transfer', 'contract', 'salary',
-  'legal notice', 'nda', 'confidential', 'refund dispute', 'terminate account',
-  'lawsuit', 'solicitor', 'attorney', 'court order', 'direct debit dispute'
+  'invoice','payment failed','bank transfer','contract','salary',
+  'legal notice','nda','confidential','refund dispute','terminate account',
+  'lawsuit','solicitor','attorney','court order','direct debit dispute'
 ];
 
-// Marketing/automated emails to ignore
 const MARKETING_WORDS = [
-  'unsubscribe', 'newsletter', 'no-reply', 'noreply', 'do not reply',
-  'donotreply', 'marketing', 'promotion', 'offer', 'discount', 'sale',
-  'weekly digest', 'monthly digest', 'automated message', 'auto-generated',
-  'you are receiving this', 'mailing list', 'bulk', 'campaign',
-  'special offer', 'click here to unsubscribe', 'manage your preferences',
-  'email preferences', 'opt out', 'opt-out'
+  'unsubscribe','newsletter','no-reply','noreply','do not reply',
+  'donotreply','marketing','promotion','offer','discount','sale',
+  'weekly digest','monthly digest','automated message','auto-generated',
+  'you are receiving this','mailing list','bulk','campaign',
+  'special offer','click here to unsubscribe','manage your preferences',
+  'email preferences','opt out','opt-out'
 ];
 
-// Also skip if sent FROM these domains (bulk senders)
 const MARKETING_DOMAINS = [
-  'mailchimp', 'sendgrid', 'constantcontact', 'hubspot', 'marketo',
-  'salesforce', 'klaviyo', 'campaignmonitor', 'mailgun', 'postmark',
-  'amazonses', 'mandrill', 'sparkpost'
+  'mailchimp','sendgrid','constantcontact','hubspot','marketo',
+  'salesforce','klaviyo','campaignmonitor','mailgun','postmark',
+  'amazonses','mandrill','sparkpost'
 ];
 
 const CATEGORIES = [
-  { name:'Login & access issues',  keywords:['login','log in','password','sign in','locked out','locked','access','2fa','two factor','reset password','cant log','account locked','username','credentials'] },
-  { name:'Technical errors',        keywords:['error','bug','500','crash','broken','not working','failed','exception','loading','spinning','slow','timeout','blank page','glitch','issue with'] },
-  { name:'Member portal problems',  keywords:['portal','dashboard','profile','update profile','edit','page not loading','display','button','wrong tier','subscription tier','account page','settings page'] },
-  { name:'Email & comms issues',    keywords:['not receiving','not getting','spam','communication','no emails','stopped receiving','missing email','havent received','haven\'t received'] },
-  { name:'Event registration',      keywords:['event','register','registration','ticket','booking','attend','cancel booking','waitlist','conference','webinar','workshop'] },
-  { name:'Membership renewal',      keywords:['renew','renewal','lapsed','lapse','expired','expire','membership due','auto renew','not renewed','renewal failed','membership expired'] },
-  { name:'Feature requests',        keywords:['feature','suggestion','would like','could you add','request','improve','bulk import','export','wish','it would be great','can you please add','is it possible to'] },
-  { name:'Billing & payments',      keywords:['payment','charge','billing','direct debit','card','refund','overcharged','double charged','receipt','transaction','fee','cost','price'] },
-  { name:'Account management',      keywords:['cancel','cancellation','close account','delete account','transfer','change email','update details','change address','update my account'] }
+  { name:'Login & access issues',  color:'#185FA5', keywords:['login','log in','password','sign in','locked out','locked','access','2fa','two factor','reset password','cant log','account locked','username','credentials'] },
+  { name:'Technical errors',        color:'#5F5E5A', keywords:['error','bug','500','crash','broken','not working','failed','exception','loading','spinning','slow','timeout','blank page','glitch'] },
+  { name:'Member portal problems',  color:'#639922', keywords:['portal','dashboard','profile','update profile','edit','page not loading','display','button','wrong tier','subscription tier','account page'] },
+  { name:'Email & comms issues',    color:'#A32D2D', keywords:['not receiving','not getting','spam','communication','no emails','stopped receiving','missing email','havent received'] },
+  { name:'Event registration',      color:'#533AB7', keywords:['event','register','registration','ticket','booking','attend','cancel booking','waitlist','conference','webinar','workshop'] },
+  { name:'Membership renewal',      color:'#993556', keywords:['renew','renewal','lapsed','lapse','expired','expire','membership due','auto renew','not renewed','renewal failed'] },
+  { name:'Feature requests',        color:'#0F6E56', keywords:['feature','suggestion','would like','could you add','request','improve','bulk import','export','wish','it would be great'] },
+  { name:'Billing & payments',      color:'#BA7517', keywords:['payment','charge','billing','direct debit','card','refund','overcharged','double charged','receipt','transaction','fee'] },
+  { name:'Account management',      color:'#4A4A8A', keywords:['cancel','cancellation','close account','delete account','transfer','change email','update details','change address'] }
 ];
 
-function isConfidential(subject, preview, from) {
-  const text = (subject + ' ' + preview).toLowerCase();
-  return CONFIDENTIAL_WORDS.some(function(w) { return text.includes(w); });
+// Sentiment keywords
+const URGENT_WORDS   = ['urgent','asap','immediately','critical','broken','cannot','cant','unable','stuck','frustrated','angry','terrible','awful','unacceptable','still not'];
+const POSITIVE_WORDS = ['thank','thanks','great','excellent','helpful','resolved','sorted','working','appreciate','happy','pleased','wonderful'];
+
+function isConfidential(subject, preview) {
+  const text = (subject+' '+preview).toLowerCase();
+  return CONFIDENTIAL_WORDS.some(w=>text.includes(w));
 }
 
 function isMarketing(subject, preview, from) {
-  const text   = (subject + ' ' + preview).toLowerCase();
-  const sender = (from || '').toLowerCase();
-
-  // Check marketing words in content
-  if (MARKETING_WORDS.some(function(w) { return text.includes(w); })) return true;
-
-  // Check if sent from a marketing platform domain
-  if (MARKETING_DOMAINS.some(function(d) { return sender.includes(d); })) return true;
-
-  // Skip if subject looks like a bulk send
-  if (/^(fw:|fwd:|re:)?\s*(newsletter|update|digest|bulletin|announcement)/i.test(subject)) return true;
-
+  const text   = (subject+' '+preview).toLowerCase();
+  const sender = (from||'').toLowerCase();
+  if (MARKETING_WORDS.some(w=>text.includes(w))) return true;
+  if (MARKETING_DOMAINS.some(d=>sender.includes(d))) return true;
+  if (/^(re:|fwd:|fw:)?\s*(newsletter|update|digest|bulletin|announcement)/i.test(subject)) return true;
   return false;
 }
 
 function categorise(subject, preview) {
-  const text = (subject + ' ' + preview).toLowerCase();
-  for (var i = 0; i < CATEGORIES.length; i++) {
+  const text = (subject+' '+preview).toLowerCase();
+  for (var i=0;i<CATEGORIES.length;i++) {
     var cat = CATEGORIES[i];
-    for (var j = 0; j < cat.keywords.length; j++) {
+    for (var j=0;j<cat.keywords.length;j++) {
       if (text.includes(cat.keywords[j])) return cat.name;
     }
   }
   return 'General enquiry';
 }
 
+function getSentiment(subject, preview) {
+  const text = (subject+' '+preview).toLowerCase();
+  if (URGENT_WORDS.some(w=>text.includes(w)))   return 'urgent';
+  if (POSITIVE_WORDS.some(w=>text.includes(w))) return 'positive';
+  return 'neutral';
+}
+
 function getFromDate(period) {
   var d = new Date();
-  if (period === 'today') {
-    d.setHours(0, 0, 0, 0);
-  } else {
-    var days = { '7':7, '30':30, '90':90, '365':365 }[period] || 30;
-    d.setDate(d.getDate() - days);
-    d.setHours(0, 0, 0, 0);
-  }
-  return d.toISOString().split('.')[0] + 'Z';
+  if (period==='today') { d.setHours(0,0,0,0); }
+  else { var days={'7':7,'30':30,'90':90,'365':365}[period]||30; d.setDate(d.getDate()-days); d.setHours(0,0,0,0); }
+  return d.toISOString().split('.')[0]+'Z';
+}
+
+function getPrevFromDate(period) {
+  var d = new Date();
+  var days = {'today':1,'7':7,'30':30,'90':90,'365':365}[period]||30;
+  d.setDate(d.getDate() - days*2);
+  d.setHours(0,0,0,0);
+  return d.toISOString().split('.')[0]+'Z';
 }
 
 function buildCategories(emails) {
+  var counts={};
+  emails.forEach(function(e){ counts[e.category]=(counts[e.category]||0)+1; });
+  return Object.entries(counts).sort(function(a,b){return b[1]-a[1];})
+    .map(function(entry){
+      var cat = CATEGORIES.find(function(c){return c.name===entry[0];});
+      return { name:entry[0], count:entry[1], color:(cat?cat.color:'#888') };
+    });
+}
+
+// Build heatmap — count emails per day of week and hour
+function buildHeatmap(emails) {
+  var days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var counts = {};
+  days.forEach(function(d){ counts[d]={}; for(var h=0;h<24;h++) counts[d][h]=0; });
   emails.forEach(function(e) {
-    counts[e.category] = (counts[e.category] || 0) + 1;
+    if (!e.datetime) return;
+    var dt = new Date(e.datetime);
+    var day = days[dt.getDay()];
+    var hr  = dt.getHours();
+    counts[day][hr]=(counts[day][hr]||0)+1;
   });
-  return Object.entries(counts)
-    .sort(function(a, b) { return b[1] - a[1]; })
-    .map(function(entry) { return { name: entry[0], count: entry[1] }; });
+  // Summarise by day
+  var summary = days.map(function(d) {
+    var total = Object.values(counts[d]).reduce(function(a,b){return a+b;},0);
+    var peakHr = Object.entries(counts[d]).sort(function(a,b){return b[1]-a[1];})[0];
+    return { day:d, total:total, peakHour:peakHr?parseInt(peakHr[0]):9, hourly:counts[d] };
+  });
+  return summary;
 }
 
-// ── BUILD FAQ FROM ACTUAL EMAIL SUBJECTS ─────────────────
-// Groups real subjects by category and picks the most common ones
+// Build weekly trend — emails per week
+function buildWeeklyTrend(emails) {
+  var weeks = {};
+  emails.forEach(function(e) {
+    var d = new Date(e.date);
+    // Get week start (Monday)
+    var day = d.getDay();
+    var diff = d.getDate() - day + (day===0?-6:1);
+    var monday = new Date(d.setDate(diff));
+    var key = monday.toISOString().split('T')[0];
+    weeks[key] = (weeks[key]||0)+1;
+  });
+  return Object.entries(weeks).sort(function(a,b){return a[0]>b[0]?1:-1;})
+    .map(function(entry){ return { week:entry[0], count:entry[1] }; });
+}
+
+// Build category trend — current vs previous period
+function buildTrend(currentEmails, previousEmails) {
+  var curr={}, prev={};
+  currentEmails.forEach(function(e){ curr[e.category]=(curr[e.category]||0)+1; });
+  previousEmails.forEach(function(e){ prev[e.category]=(prev[e.category]||0)+1; });
+  return CATEGORIES.map(function(cat) {
+    var c = curr[cat.name]||0;
+    var p = prev[cat.name]||0;
+    var change = p===0 ? (c>0?100:0) : Math.round(((c-p)/p)*100);
+    return { name:cat.name, color:cat.color, current:c, previous:p, change:change };
+  }).filter(function(t){ return t.current>0||t.previous>0; })
+    .sort(function(a,b){ return b.current-a.current; });
+}
+
+// Generate AI-style insights from real data
+function buildInsights(emails, categories, trend, period) {
+  var insights = [];
+  var totalCurrent = emails.length;
+
+  // Insight 1 — Top issue
+  if (categories[0]) {
+    var top = categories[0];
+    var pct = Math.round((top.count/totalCurrent)*100);
+    insights.push({
+      type:    'warning',
+      icon:    'ti-alert-triangle',
+      title:   top.name+' is your biggest issue',
+      detail:  top.count+' emails ('+pct+'% of all support) are about '+top.name.toLowerCase()+'. This is where the most member friction is happening.',
+      action:  'Review the most recent '+Math.min(top.count,10)+' emails in this category to identify the root cause.'
+    });
+  }
+
+  // Insight 2 — Biggest spike
+  var biggestSpike = trend.filter(function(t){return t.change>30&&t.current>2;})
+    .sort(function(a,b){return b.change-a.change;})[0];
+  if (biggestSpike) {
+    insights.push({
+      type:   'danger',
+      icon:   'ti-trending-up',
+      title:  biggestSpike.name+' up '+biggestSpike.change+'% vs previous period',
+      detail: 'You received '+biggestSpike.current+' tickets this period vs '+biggestSpike.previous+' last period. This spike needs attention — something may have changed or broken.',
+      action: 'Check if any system changes, updates, or events happened at the start of this period.'
+    });
+  }
+
+  // Insight 3 — Biggest improvement
+  var biggestDrop = trend.filter(function(t){return t.change<-20&&t.previous>2;})
+    .sort(function(a,b){return a.change-b.change;})[0];
+  if (biggestDrop) {
+    insights.push({
+      type:   'success',
+      icon:   'ti-trending-down',
+      title:  biggestDrop.name+' down '+Math.abs(biggestDrop.change)+'% — great progress!',
+      detail: 'Tickets dropped from '+biggestDrop.previous+' to '+biggestDrop.current+'. Whatever you fixed is working.',
+      action: 'Document what was changed so you can apply the same approach to other categories.'
+    });
+  }
+
+  // Insight 4 — Urgent emails
+  var urgent = emails.filter(function(e){return e.sentiment==='urgent';});
+  if (urgent.length > 0) {
+    var urgentPct = Math.round((urgent.length/totalCurrent)*100);
+    insights.push({
+      type:   'danger',
+      icon:   'ti-flame',
+      title:  urgent.length+' urgent/frustrated emails ('+urgentPct+'%)',
+      detail: 'These members used words like "urgent", "broken", "still not resolved", or expressed frustration. They need priority attention.',
+      action: 'Filter the email log by sentiment to see these emails first and prioritise responses.'
+    });
+  }
+
+  // Insight 5 — Feature requests volume
+  var features = categories.find(function(c){return c.name==='Feature requests';});
+  if (features && features.count >= 3) {
+    insights.push({
+      type:   'info',
+      icon:   'ti-bulb',
+      title:  features.count+' members requested new features',
+      detail: 'Feature requests are a signal of engaged members who want more from the platform. Review these to identify quick wins.',
+      action: 'Click "Feature requests" in the category list to see exactly what members are asking for.'
+    });
+  }
+
+  // Insight 6 — Volume recommendation
+  var avgPerDay = totalCurrent / ({'today':1,'7':7,'30':30,'90':90,'365':365}[period]||30);
+  if (avgPerDay > 5) {
+    insights.push({
+      type:   'warning',
+      icon:   'ti-mail-opened',
+      title:  'High support volume — '+avgPerDay.toFixed(1)+' emails per day',
+      detail: 'At this volume, consider building self-service resources. The top 3 categories account for most tickets — an FAQ page or help centre could reduce this significantly.',
+      action: 'Export the auto-generated FAQ from the FAQ tab and publish it to your website.'
+    });
+  }
+
+  // Always add a positive insight if things look healthy
+  if (insights.length < 3 && totalCurrent < 20) {
+    insights.push({
+      type:   'success',
+      icon:   'ti-circle-check',
+      title:  'Support volume is healthy',
+      detail: 'Low ticket volume suggests members are finding what they need. Keep monitoring for any spikes.',
+      action: 'Continue reviewing weekly to catch issues early.'
+    });
+  }
+
+  return insights.slice(0,5);
+}
+
 function buildFAQ(emails, categories) {
-  var faqs = [];
-  var seen = {};
-
-  // Group emails by category
-  var byCategory = {};
-  emails.forEach(function(e) {
-    if (!byCategory[e.category]) byCategory[e.category] = [];
-    byCategory[e.category].push(e);
-  });
-
-  // For each category build FAQ from real subjects
+  var faqs=[], seen={};
+  var byCategory={};
+  emails.forEach(function(e){ if(!byCategory[e.category])byCategory[e.category]=[]; byCategory[e.category].push(e); });
   categories.forEach(function(cat) {
-    var catEmails = byCategory[cat.name] || [];
-    if (catEmails.length === 0) return;
-
-    // Count subject frequency (cleaned up)
-    var subjectCounts = {};
-    catEmails.forEach(function(e) {
-      // Clean subject — remove Re:, Fwd: etc
-      var clean = e.subject
-        .replace(/^(re:|fwd:|fw:)\s*/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase();
-      subjectCounts[clean] = (subjectCounts[clean] || 0) + 1;
+    var catEmails=byCategory[cat.name]||[];
+    if(catEmails.length===0) return;
+    var subjectCounts={};
+    catEmails.forEach(function(e){
+      var clean=e.subject.replace(/^(re:|fwd:|fw:)\s*/gi,'').replace(/\s+/g,' ').trim().toLowerCase();
+      subjectCounts[clean]=(subjectCounts[clean]||0)+1;
     });
-
-    // Sort by frequency
-    var sortedSubjects = Object.entries(subjectCounts)
-      .sort(function(a, b) { return b[1] - a[1]; })
-      .slice(0, 2); // top 2 per category
-
-    sortedSubjects.forEach(function(entry) {
-      var subject = entry[0];
-      var count   = entry[1];
-
-      // Skip if too short or already seen
-      if (subject.length < 10 || seen[subject]) return;
-      seen[subject] = true;
-
-      // Capitalise first letter
-      var question = subject.charAt(0).toUpperCase() + subject.slice(1);
-      if (!question.endsWith('?')) question += '?';
-
-      faqs.push({
-        q:        question,
-        a:        getFAQAnswer(cat.name, subject),
-        category: cat.name,
-        count:    count
-      });
+    Object.entries(subjectCounts).sort(function(a,b){return b[1]-a[1];}).slice(0,2).forEach(function(entry){
+      var subject=entry[0], count=entry[1];
+      if(subject.length<10||seen[subject]) return;
+      seen[subject]=true;
+      var question=subject.charAt(0).toUpperCase()+subject.slice(1);
+      if(!question.endsWith('?'))question+='?';
+      faqs.push({ q:question, a:getFAQAnswer(cat.name,subject), category:cat.name, count:count });
     });
   });
-
-  faqs.sort(function(a, b) { return b.count - a.count; });
-  return faqs.slice(0, 12);
+  faqs.sort(function(a,b){return b.count-a.count;});
+  return faqs.slice(0,12);
 }
 
-// Smart answer generator based on category + subject keywords
 function getFAQAnswer(category, subject) {
-  var s = subject.toLowerCase();
-
-  if (category === 'Login & access issues') {
-    if (s.includes('password') || s.includes('reset')) return 'Go to the login page and click "Forgot password". An email will arrive within a few minutes — check your spam folder too. If nothing arrives contact support@membershipanywhere.com and we will reset it manually.';
-    if (s.includes('locked') || s.includes('lock')) return 'Accounts lock after several failed login attempts. Wait 15 minutes and try again, or contact support@membershipanywhere.com to unlock it immediately.';
-    if (s.includes('2fa') || s.includes('two factor')) return 'Check your phone signal and request a new code. If you have changed your phone number contact support so we can update your 2FA settings.';
-    return 'Please contact support@membershipanywhere.com with your username and we will help you regain access as quickly as possible.';
+  var s=subject.toLowerCase();
+  if(category==='Login & access issues'){
+    if(s.includes('password')||s.includes('reset')) return 'Go to the login page and click "Forgot password". An email arrives within a few minutes — check spam too. Contact support@membershipanywhere.com if nothing arrives.';
+    if(s.includes('locked')) return 'Accounts lock after several failed attempts. Wait 15 minutes and try again, or contact support@membershipanywhere.com to unlock immediately.';
+    if(s.includes('2fa')||s.includes('two factor')) return 'Check your signal and request a new code. If you changed your number contact support to update your 2FA settings.';
+    return 'Contact support@membershipanywhere.com with your username and we will help you regain access quickly.';
   }
-  if (category === 'Technical errors') {
-    if (s.includes('load') || s.includes('loading')) return 'Try a hard refresh (Ctrl+Shift+R on Windows, Cmd+Shift+R on Mac). If the issue continues try a different browser or clear your cache. Contact support with any error code you see.';
-    return 'Try refreshing the page or using a different browser. If the error persists please contact support@membershipanywhere.com with a screenshot and the steps to reproduce the issue.';
-  }
-  if (category === 'Member portal problems') {
-    if (s.includes('tier') || s.includes('subscription')) return 'This can happen after an upgrade if the system has not refreshed. Log out, wait 5 minutes, and log back in. If still incorrect contact support with your payment confirmation.';
-    return 'Try logging out and back in. If the issue persists please contact support@membershipanywhere.com with a screenshot of what you are seeing.';
-  }
-  if (category === 'Email & comms issues') {
-    return 'Check your spam or junk folder first. Add support@membershipanywhere.com to your safe senders list. If you still do not receive emails contact us and we will check your communication preferences.';
-  }
-  if (category === 'Event registration') {
-    if (s.includes('cancel') || s.includes('refund')) return 'Email support@membershipanywhere.com with your booking reference. Refunds are available up to 7 days before the event. We can also transfer your place to a colleague.';
-    return 'Contact support@membershipanywhere.com with the event name and your membership details and we will get your registration sorted.';
-  }
-  if (category === 'Membership renewal') {
-    if (s.includes('lapsed') || s.includes('expired')) return 'Payment processing can take up to 1 hour to update your status. Refresh your portal after 1 hour. If still showing lapsed contact support with your payment confirmation and we will update it manually.';
-    return 'Log into your member portal and go to Account Settings to manage your renewal. Contact support@membershipanywhere.com if you need any assistance.';
-  }
-  if (category === 'Billing & payments') {
-    return 'For any billing questions please contact support@membershipanywhere.com with your membership number and details of the query. We aim to respond within 1 business day.';
-  }
-  if (category === 'Account management') {
-    return 'You can manage most account settings by logging into your member portal and going to Account Settings. For anything you cannot change yourself contact support@membershipanywhere.com.';
-  }
-  if (category === 'Feature requests') {
-    return 'Thank you for the suggestion! We love hearing from members. Please email support@membershipanywhere.com with the subject line "Feature Request" and describe what you would like to see added.';
-  }
-  return 'Please contact support@membershipanywhere.com with full details and we will get back to you within 1 business day.';
+  if(category==='Technical errors') return 'Try a hard refresh (Ctrl+Shift+R). If it continues try a different browser or clear your cache. Contact support with any error code you see.';
+  if(category==='Member portal problems') return 'Log out, wait 5 minutes, and log back in. If still incorrect contact support@membershipanywhere.com with a screenshot.';
+  if(category==='Email & comms issues') return 'Check your spam folder and add support@membershipanywhere.com to safe senders. Contact us if still not receiving emails.';
+  if(category==='Event registration') return 'Contact support@membershipanywhere.com with your booking reference. Refunds available up to 7 days before the event.';
+  if(category==='Membership renewal') return 'Allow 1 hour for payment to process. If still showing lapsed contact support with your payment confirmation.';
+  if(category==='Billing & payments') return 'Contact support@membershipanywhere.com with your membership number and billing details. We respond within 1 business day.';
+  if(category==='Feature requests') return 'Email support@membershipanywhere.com with subject "Feature Request". We review all suggestions regularly.';
+  return 'Contact support@membershipanywhere.com with full details and we will get back to you within 1 business day.';
 }
 
-function todayStr() { return new Date().toISOString().split('T')[0]; }
-function daysAgoStr(n) {
-  var d = new Date(); d.setDate(d.getDate() - n);
-  return d.toISOString().split('T')[0];
-}
+function todayStr(){return new Date().toISOString().split('T')[0];}
+function daysAgoStr(n){var d=new Date();d.setDate(d.getDate()-n);return d.toISOString().split('T')[0];}
 
-async function getAccessToken() {
-  var url  = 'https://login.microsoftonline.com/' + TENANT_ID + '/oauth2/v2.0/token';
-  var body = new URLSearchParams({
-    grant_type: 'client_credentials', client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET, scope: 'https://graph.microsoft.com/.default'
-  });
-  var res  = await fetch(url, { method:'POST', body:body });
-  var json = await res.json();
-  if (json.error) throw new Error('Token failed: ' + json.error);
-  console.log('Token acquired successfully');
+async function getAccessToken(){
+  var url='https://login.microsoftonline.com/'+TENANT_ID+'/oauth2/v2.0/token';
+  var body=new URLSearchParams({grant_type:'client_credentials',client_id:CLIENT_ID,client_secret:CLIENT_SECRET,scope:'https://graph.microsoft.com/.default'});
+  var res=await fetch(url,{method:'POST',body:body});
+  var json=await res.json();
+  if(json.error)throw new Error('Token failed: '+json.error);
   return json.access_token;
 }
 
-async function fetchFromGraph(period) {
-  var token = await getAccessToken();
-  var since = getFromDate(period);
-  console.log('Fetching period: ' + period + ' since: ' + since);
-
-  var filter  = 'receivedDateTime ge ' + since;
-  var baseUrl = 'https://graph.microsoft.com/v1.0/users/' + MAILBOX + '/messages'
-              + '?$filter=' + encodeURIComponent(filter)
-              + '&$select=subject,from,receivedDateTime,bodyPreview'
-              + '&$orderby=' + encodeURIComponent('receivedDateTime desc')
-              + '&$top=999';
-
-  var emails       = [];
-  var skipped      = 0;
-  var marketing    = 0;
-  var url          = baseUrl;
-  var page         = 0;
-
-  while (url) {
+async function fetchEmailsForPeriod(token, fromDate, toDate) {
+  var filter = 'receivedDateTime ge '+fromDate;
+  if (toDate) filter += ' and receivedDateTime lt '+toDate;
+  var url = 'https://graph.microsoft.com/v1.0/users/'+MAILBOX+'/messages'
+          + '?$filter='+encodeURIComponent(filter)
+          + '&$select=subject,from,receivedDateTime,bodyPreview'
+          + '&$orderby='+encodeURIComponent('receivedDateTime desc')
+          + '&$top=999';
+  var emails=[], skipped=0, marketing=0, page=0;
+  while(url){
     page++;
-    var res  = await fetch(url, { headers:{ Authorization:'Bearer ' + token } });
-    var json = await res.json();
-
-    if (json.error) {
-      console.error('Graph error:', JSON.stringify(json.error));
-      throw new Error(json.error.code + ': ' + json.error.message);
-    }
-
-    var items = json.value || [];
-    console.log('Page ' + page + ': ' + items.length + ' emails');
-
-    items.forEach(function(m) {
-      var subject = m.subject     || '(no subject)';
-      var preview = m.bodyPreview || '';
-      var from    = (m.from && m.from.emailAddress) ? m.from.emailAddress.address : 'unknown';
-      var date    = m.receivedDateTime ? m.receivedDateTime.split('T')[0] : '';
-
-      if (isConfidential(subject, preview, from)) { skipped++; return; }
-      if (isMarketing(subject, preview, from))    { marketing++; return; }
-
-      emails.push({ subject:subject, from:from, date:date, category:categorise(subject, preview) });
+    var res=await fetch(url,{headers:{Authorization:'Bearer '+token}});
+    var json=await res.json();
+    if(json.error) throw new Error(json.error.code+': '+json.error.message);
+    console.log('Page '+page+': '+( json.value||[]).length+' emails');
+    (json.value||[]).forEach(function(m){
+      var subject=m.subject||'(no subject)';
+      var preview=m.bodyPreview||'';
+      var from=(m.from&&m.from.emailAddress)?m.from.emailAddress.address:'unknown';
+      var date=m.receivedDateTime?m.receivedDateTime.split('T')[0]:'';
+      var datetime=m.receivedDateTime||'';
+      if(isConfidential(subject,preview)){skipped++;return;}
+      if(isMarketing(subject,preview,from)){marketing++;return;}
+      emails.push({subject:subject,from:from,date:date,datetime:datetime,category:categorise(subject,preview),sentiment:getSentiment(subject,preview)});
     });
-
-    url = json['@odata.nextLink'] || null;
-    if (page >= 20) { url = null; }
+    url=json['@odata.nextLink']||null;
+    if(page>=20){url=null;}
   }
-
-  console.log('TOTAL: ' + emails.length + ' support, ' + skipped + ' confidential, ' + marketing + ' marketing filtered');
-  return { emails:emails, skipped:skipped, marketing:marketing };
+  return {emails:emails,skipped:skipped,marketing:marketing};
 }
 
 // Demo data
-var DEMO_POOL = [
-  { subject:'Cannot log into my member portal',      from:'j.smith@email.com',   category:'Login & access issues' },
-  { subject:'Event registration page not loading',   from:'member@company.com',  category:'Technical errors' },
-  { subject:'Feature request bulk CSV import',       from:'admin@assoc.com',     category:'Feature requests' },
-  { subject:'Membership renewal not processing',     from:'b.jones@email.com',   category:'Membership renewal' },
-  { subject:'2FA code not arriving by SMS',          from:'c.brown@org.uk',      category:'Login & access issues' },
-  { subject:'Error 500 when editing profile',        from:'d.wilson@member.org', category:'Technical errors' },
-  { subject:'Event calendar not showing new events', from:'i.clark@member.net',  category:'Event registration' },
-  { subject:'Account locked after failed logins',    from:'k.allen@org.com',     category:'Login & access issues' },
-  { subject:'Portal shows wrong subscription tier',  from:'f.martin@club.com',   category:'Member portal problems' },
-  { subject:'Password reset email not received',     from:'g.lee@email.com',     category:'Login & access issues' }
+var DEMO_EMAILS = [
+  {subject:'Cannot log into member portal',        from:'j.smith@email.com',   category:'Login & access issues',  sentiment:'urgent'},
+  {subject:'Event registration page not loading',  from:'member@company.com',  category:'Technical errors',        sentiment:'neutral'},
+  {subject:'Feature request bulk CSV import',      from:'admin@assoc.com',     category:'Feature requests',        sentiment:'neutral'},
+  {subject:'Membership renewal not processing',    from:'b.jones@email.com',   category:'Membership renewal',      sentiment:'urgent'},
+  {subject:'2FA code not arriving',                from:'c.brown@org.uk',      category:'Login & access issues',   sentiment:'urgent'},
+  {subject:'Error 500 when editing profile',       from:'d.wilson@member.org', category:'Technical errors',        sentiment:'neutral'},
+  {subject:'Account locked after failed logins',   from:'k.allen@org.com',     category:'Login & access issues',   sentiment:'urgent'},
+  {subject:'Portal shows wrong subscription tier', from:'f.martin@club.com',   category:'Member portal problems',  sentiment:'neutral'},
+  {subject:'Password reset email not received',    from:'g.lee@email.com',     category:'Login & access issues',   sentiment:'neutral'},
+  {subject:'Renewal reminder was not sent',        from:'r.patel@org.uk',      category:'Membership renewal',      sentiment:'neutral'},
+  {subject:'Login page not loading on mobile',     from:'m.ng@email.com',      category:'Login & access issues',   sentiment:'urgent'},
+  {subject:'Email notifications stopped working',  from:'t.ford@assoc.com',    category:'Email & comms issues',    sentiment:'neutral'},
+  {subject:'Cannot update billing details',        from:'s.jones@email.com',   category:'Billing & payments',      sentiment:'neutral'},
+  {subject:'Request to add bulk member import',    from:'h.white@co.org',      category:'Feature requests',        sentiment:'positive'},
+  {subject:'Thank you for resolving my issue',     from:'happy@member.com',    category:'General enquiry',         sentiment:'positive'}
 ];
 
-function getDemoData(period) {
-  var take = { today:5,'7':10,'30':10,'90':10,'365':10 }[period]||10;
-  var maxD = { today:0,'7':7,'30':30,'90':90,'365':365 }[period]||30;
-  var emails = DEMO_POOL.slice(0,take).map(function(e,i) {
-    return Object.assign({},e,{ date: i===0 ? todayStr() : daysAgoStr(Math.min(i*Math.floor(maxD/take),maxD)) });
+function getDemoData(period){
+  var take={'today':5,'7':10,'30':15,'90':12,'365':15}[period]||15;
+  var maxD={'today':0,'7':7,'30':30,'90':90,'365':365}[period]||30;
+  var emails=DEMO_EMAILS.slice(0,take).map(function(e,i){
+    return Object.assign({},e,{date:i===0?todayStr():daysAgoStr(Math.min(i*Math.floor(maxD/take),maxD)),datetime:new Date(Date.now()-i*86400000*Math.floor(maxD/take)).toISOString()});
   });
-  var categories = buildCategories(emails);
-  return { source:'demo', period:period, total:emails.length, skipped:1, marketing:3, categories:categories, emails:emails, faq:buildFAQ(emails,categories) };
+  var prevEmails=DEMO_EMAILS.slice(0,Math.max(1,take-3)).map(function(e,i){
+    return Object.assign({},e,{date:daysAgoStr(maxD+i),datetime:new Date(Date.now()-(maxD+i)*86400000).toISOString()});
+  });
+  var categories=buildCategories(emails);
+  var trend=buildTrend(emails,prevEmails);
+  var heatmap=buildHeatmap(emails);
+  var weekly=buildWeeklyTrend(emails);
+  var insights=buildInsights(emails,categories,trend,period);
+  var faq=buildFAQ(emails,categories);
+  return {source:'demo',period:period,total:emails.length,skipped:1,marketing:3,categories:categories,emails:emails,trend:trend,heatmap:heatmap,weekly:weekly,insights:insights,faq:faq};
 }
 
-// Routes
-app.get('/', function(req,res) {
-  res.json({ status:'ok', mailbox:MAILBOX, mode:(TENANT_ID&&CLIENT_ID&&CLIENT_SECRET)?'live':'demo' });
+app.get('/',function(req,res){res.json({status:'ok',mailbox:MAILBOX,mode:(TENANT_ID&&CLIENT_ID&&CLIENT_SECRET)?'live':'demo'});});
+
+app.get('/debug',async function(req,res){
+  if(!TENANT_ID||!CLIENT_ID||!CLIENT_SECRET)return res.json({status:'no credentials'});
+  try{var token=await getAccessToken();var r=await fetch('https://graph.microsoft.com/v1.0/users/'+MAILBOX,{headers:{Authorization:'Bearer '+token}});res.json({tokenOk:true,mailboxCheck:await r.json()});}
+  catch(e){res.json({tokenOk:false,error:e.message});}
 });
 
-app.get('/debug', async function(req,res) {
-  if (!TENANT_ID||!CLIENT_ID||!CLIENT_SECRET) return res.json({ status:'no credentials' });
-  try {
-    var token = await getAccessToken();
-    var r = await fetch('https://graph.microsoft.com/v1.0/users/'+MAILBOX, { headers:{ Authorization:'Bearer '+token } });
-    res.json({ tokenOk:true, mailboxCheck: await r.json() });
-  } catch(e) { res.json({ tokenOk:false, error:e.message }); }
-});
-
-app.get('/emails', async function(req,res) {
-  var period = req.query.period || '30';
-  if (!TENANT_ID||!CLIENT_ID||!CLIENT_SECRET) return res.json(getDemoData(period));
-  try {
-    var result     = await fetchFromGraph(period);
-    var categories = buildCategories(result.emails);
-    var faq        = buildFAQ(result.emails, categories);
-    res.json({ source:'live', period:period, total:result.emails.length, skipped:result.skipped, marketing:result.marketing, categories:categories, emails:result.emails, faq:faq });
-  } catch(err) {
-    console.error('Error:', err.message);
-    res.status(500).json({ error:err.message });
+app.get('/emails',async function(req,res){
+  var period=req.query.period||'30';
+  if(!TENANT_ID||!CLIENT_ID||!CLIENT_SECRET)return res.json(getDemoData(period));
+  try{
+    var token=await getAccessToken();
+    var currFrom=getFromDate(period);
+    var prevFrom=getPrevFromDate(period);
+    console.log('Fetching current period: '+period+' from '+currFrom);
+    var curr=await fetchEmailsForPeriod(token,currFrom,null);
+    console.log('Fetching previous period from '+prevFrom+' to '+currFrom);
+    var prev=await fetchEmailsForPeriod(token,prevFrom,currFrom);
+    console.log('Current: '+curr.emails.length+' Previous: '+prev.emails.length);
+    var categories=buildCategories(curr.emails);
+    var trend=buildTrend(curr.emails,prev.emails);
+    var heatmap=buildHeatmap(curr.emails);
+    var weekly=buildWeeklyTrend(curr.emails);
+    var insights=buildInsights(curr.emails,categories,trend,period);
+    var faq=buildFAQ(curr.emails,categories);
+    res.json({source:'live',period:period,total:curr.emails.length,skipped:curr.skipped,marketing:curr.marketing,categories:categories,emails:curr.emails,trend:trend,heatmap:heatmap,weekly:weekly,insights:insights,faq:faq});
+  }catch(err){
+    console.error('Error:',err.message);
+    res.status(500).json({error:err.message});
   }
 });
 
-app.listen(PORT, function() {
-  console.log('MA Support Backend running on port ' + PORT);
-  console.log('Mailbox: ' + MAILBOX);
-  console.log('Mode: ' + ((TENANT_ID&&CLIENT_ID&&CLIENT_SECRET) ? 'LIVE' : 'DEMO'));
+app.listen(PORT,function(){
+  console.log('MA Support Backend running on port '+PORT);
+  console.log('Mailbox: '+MAILBOX);
+  console.log('Mode: '+((TENANT_ID&&CLIENT_ID&&CLIENT_SECRET)?'LIVE':'DEMO'));
 });
